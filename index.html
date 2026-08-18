@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vilt Group | Quiz</title>
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="assets/favicon-16x16.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <img class="brand-logo" src="assets/vilt-logo2-white.svg" alt="Vilt Group">
+    </div>
+    <nav class="topbar-nav">
+      <button id="navHomeBtn" class="link-btn">Home</button>
+      <button id="navAdminBtn" class="link-btn">Admin</button>
+    </nav>
+  </div>
+</header>
+
+<main id="app" class="app-shell">
+
+  <!-- ============ HOME / LANDING ============ -->
+  <section id="view-home" class="view active-view">
+    <div class="card hero-card">
+      <h1>Interactive Surveys &amp; Quizzes</h1>
+      <p class="muted">Enter the quiz code you were given, or paste the full link to get started.</p>
+      <form id="joinCodeForm" class="join-form">
+        <input id="joinCodeInput" type="text" placeholder="Quiz code (e.g. A1B2C3)" maxlength="12" autocomplete="off">
+        <button type="submit" class="btn btn-primary">Join</button>
+      </form>
+      <p class="tiny-note">Are you an admin? <button id="goAdminLink" class="link-inline">Go to the admin panel</button></p>
+    </div>
+  </section>
+
+  <!-- ============ ADMIN LOGIN ============ -->
+  <section id="view-admin-login" class="view">
+    <div class="card small-card">
+      <h2>Admin login</h2>
+      <p class="muted">Enter the password to manage questions and results.</p>
+      <form id="adminLoginForm">
+        <input id="adminPasswordInput" type="password" placeholder="Password" autocomplete="current-password">
+        <button type="submit" class="btn btn-primary full-width">Log in</button>
+        <p id="adminLoginError" class="error-text hidden">Incorrect password.</p>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============ ADMIN PANEL ============ -->
+  <section id="view-admin" class="view">
+    <div class="admin-header">
+      <h2>Admin panel</h2>
+      <div class="admin-header-actions">
+        <button id="shareLinkBtn" class="btn btn-outline">Generate link for players</button>
+        <button id="adminLogoutBtn" class="btn btn-ghost">Log out</button>
+      </div>
+    </div>
+
+    <div id="shareLinkBox" class="share-box hidden">
+      <p><strong>Code to join from the home page:</strong></p>
+      <div class="share-row">
+        <input id="shareCodeOutput" type="text" readonly>
+        <button id="copyShareCodeBtn" class="btn btn-primary">Copy code</button>
+      </div>
+      <p class="tiny-note">This code only works on this same device/browser. Enter it in "Quiz code" on the home page.</p>
+
+      <p style="margin-top:16px;"><strong>Full link (works on any device):</strong></p>
+      <div class="share-row">
+        <input id="shareLinkOutput" type="text" readonly>
+        <button id="copyShareLinkBtn" class="btn btn-outline">Copy link</button>
+      </div>
+      <p class="tiny-note">The link includes the current questions, so it works on any device without needing a server.</p>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="questions">Questions</button>
+      <button class="tab-btn" data-tab="results">Results</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- Questions Tab -->
+    <div id="tab-questions" class="tab-panel active">
+      <div class="panel-actions">
+        <button id="addQuestionBtn" class="btn btn-primary">+ New question</button>
+      </div>
+      <ul id="questionList" class="question-list"></ul>
+      <p id="noQuestionsMsg" class="muted hidden">No questions added yet.</p>
+    </div>
+
+    <!-- Results Tab -->
+    <div id="tab-results" class="tab-panel">
+      <div class="panel-actions">
+        <button id="exportCsvBtn" class="btn btn-outline">Export CSV</button>
+        <button id="clearResultsBtn" class="btn btn-ghost">Clear results</button>
+      </div>
+      <div class="table-wrap">
+        <table id="resultsTable" class="results-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Score</th>
+              <th>Correct</th>
+              <th>Total time</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody id="resultsTableBody"></tbody>
+        </table>
+      </div>
+      <p id="noResultsMsg" class="muted hidden">No results recorded on this device yet.</p>
+      <p class="tiny-note">Note: results are saved locally in each player's browser. To consolidate them, ask each participant to send you a screenshot of their final result, or check the results on the same device they played on.</p>
+    </div>
+
+    <!-- Settings Tab -->
+    <div id="tab-settings" class="tab-panel">
+      <div class="card">
+        <h3>Change admin password</h3>
+        <form id="changePasswordForm">
+          <input id="newPasswordInput" type="password" placeholder="New password" autocomplete="new-password">
+          <button type="submit" class="btn btn-primary">Update password</button>
+        </form>
+        <p id="passwordChangedMsg" class="success-text hidden">Password updated.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ QUESTION EDIT MODAL ============ -->
+  <div id="questionModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3 id="questionModalTitle">New question</h3>
+      <form id="questionForm">
+        <label>Question text</label>
+        <textarea id="qTextInput" rows="2" required></textarea>
+
+        <label>Question type</label>
+        <select id="qTypeInput">
+          <option value="classic4">Multiple choice (4 answers)</option>
+          <option value="classic2">Multiple choice (2 answers)</option>
+          <option value="truefalse">True or false</option>
+          <option value="multi">Multiple select (several correct)</option>
+        </select>
+
+        <div class="option-grid">
+          <div class="option-field option-red" data-opt-idx="0">
+            <label>Option A</label>
+            <input type="text" id="qOption0" required>
+            <div class="correct-control" id="qCorrectControl0"></div>
+          </div>
+          <div class="option-field option-blue" data-opt-idx="1">
+            <label>Option B</label>
+            <input type="text" id="qOption1" required>
+            <div class="correct-control" id="qCorrectControl1"></div>
+          </div>
+          <div class="option-field option-yellow" data-opt-idx="2">
+            <label>Option C</label>
+            <input type="text" id="qOption2" required>
+            <div class="correct-control" id="qCorrectControl2"></div>
+          </div>
+          <div class="option-field option-green" data-opt-idx="3">
+            <label>Option D</label>
+            <input type="text" id="qOption3" required>
+            <div class="correct-control" id="qCorrectControl3"></div>
+          </div>
+        </div>
+
+        <label>Time limit (seconds)</label>
+        <input type="number" id="qTimeInput" min="5" max="120" value="20" required>
+
+        <div class="modal-actions">
+          <button type="button" id="cancelQuestionBtn" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============ CLIENT: NAME ENTRY ============ -->
+  <section id="view-join" class="view">
+    <div class="card small-card">
+      <h2 id="joinQuizTitle">Welcome!</h2>
+      <p class="muted">Enter your name to start the quiz.</p>
+      <form id="nameForm">
+        <input id="playerNameInput" type="text" placeholder="Your name" maxlength="40" required autocomplete="off">
+        <button type="submit" class="btn btn-primary full-width">Start</button>
+      </form>
+      <p id="joinErrorMsg" class="error-text hidden"></p>
+    </div>
+  </section>
+
+  <!-- ============ CLIENT: QUIZ PLAY ============ -->
+  <section id="view-play" class="view">
+    <div class="play-header">
+      <div class="progress-info">
+        <span id="progressLabel">Question 1 / 5</span>
+        <div class="progress-bar-track"><div id="progressBarFill" class="progress-bar-fill"></div></div>
+      </div>
+      <div id="timerCircle" class="timer-circle">
+        <span id="timerValue">20</span>
+      </div>
+    </div>
+
+    <div class="question-box">
+      <h2 id="playQuestionText">Question?</h2>
+    </div>
+
+    <div id="answerGrid" class="answer-grid">
+      <button class="answer-btn opt-red" data-idx="0"><span class="opt-shape"></span><span class="opt-text" id="playOption0"></span></button>
+      <button class="answer-btn opt-blue" data-idx="1"><span class="opt-shape"></span><span class="opt-text" id="playOption1"></span></button>
+      <button class="answer-btn opt-yellow" data-idx="2"><span class="opt-shape"></span><span class="opt-text" id="playOption2"></span></button>
+      <button class="answer-btn opt-green" data-idx="3"><span class="opt-shape"></span><span class="opt-text" id="playOption3"></span></button>
+    </div>
+
+    <button type="button" id="confirmMultiBtn" class="btn btn-primary full-width hidden" disabled>Confirm answer</button>
+
+    <div id="feedbackOverlay" class="feedback-overlay hidden">
+      <div id="feedbackBox" class="feedback-box">
+        <div id="feedbackIcon" class="feedback-icon"></div>
+        <p id="feedbackText" class="feedback-text"></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CLIENT: FINAL RESULT ============ -->
+  <section id="view-result" class="view">
+    <div class="card result-card">
+      <h2>Quiz completed!</h2>
+      <p class="muted" id="resultGreeting"></p>
+      <div class="score-display">
+        <span id="finalScore">0</span>
+        <span class="score-label">points</span>
+      </div>
+      <p id="resultSummaryLine" class="muted"></p>
+      <ul id="answerSummaryList" class="answer-summary-list"></ul>
+      <button id="backHomeBtn" class="btn btn-primary full-width">Back to home</button>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <p>&copy; <span id="footerYear"></span> Vilt Group. All rights reserved.</p>
+</footer>
+
+<script src="app.js?v=5"></script>
+</body>
+</html>
