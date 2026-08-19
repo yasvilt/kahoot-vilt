@@ -271,6 +271,30 @@ label { display: block; font-weight: 600; font-size: 0.85rem; margin-bottom: 6px
 .results-table th { background: var(--color-bg-alt); font-weight: 700; color: var(--color-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; }
 .results-table tr:last-child td { border-bottom: none; }
 
+/* ---------- Admin: live games (grouped results) ---------- */
+.live-games-list { display: flex; flex-direction: column; gap: 14px; margin: 14px 0; }
+.live-game-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 16px 18px;
+  box-shadow: var(--shadow-sm);
+}
+.live-game-card .live-game-header {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  margin-bottom: 10px; flex-wrap: wrap;
+}
+.live-game-card .live-game-header strong { font-size: 0.95rem; }
+.live-game-card .live-game-header span { color: var(--color-muted); font-size: 0.8rem; }
+.live-game-players { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.live-game-players li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 8px 12px; border-radius: var(--radius-sm); background: var(--color-bg-alt);
+  font-size: 0.88rem;
+}
+.live-game-players li .lg-rank { color: var(--color-muted); font-weight: 700; margin-right: 8px; }
+.live-game-players li .lg-meta { color: var(--color-muted); font-size: 0.78rem; }
+
 /* ---------- Modal ---------- */
 .modal-overlay {
   position: fixed; inset: 0; background: rgba(0, 0, 0, 0.65);

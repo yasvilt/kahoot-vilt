@@ -102,6 +102,13 @@
         <button id="exportCsvBtn" class="btn btn-outline">Export CSV</button>
         <button id="clearResultsBtn" class="btn btn-ghost">Clear results</button>
       </div>
+
+      <h3>Live games</h3>
+      <p class="tiny-note">Each live game you hosted, with its final leaderboard, saved automatically on this device when the game finished.</p>
+      <div id="liveGamesList" class="live-games-list"></div>
+      <p id="noLiveGamesMsg" class="muted hidden">No live games hosted on this device yet.</p>
+
+      <h3 style="margin-top:28px;">Solo play results</h3>
       <div class="table-wrap">
         <table id="resultsTable" class="results-table">
           <thead>
@@ -116,8 +123,8 @@
           <tbody id="resultsTableBody"></tbody>
         </table>
       </div>
-      <p id="noResultsMsg" class="muted hidden">No results recorded on this device yet.</p>
-      <p class="tiny-note">Note: results are saved locally in each player's browser. To consolidate them, ask each participant to send you a screenshot of their final result, or check the results on the same device they played on.</p>
+      <p id="noResultsMsg" class="muted hidden">No solo-play results recorded on this device yet.</p>
+      <p class="tiny-note">Solo-play results only save on the player's own device — to consolidate those, ask each participant to send you a screenshot of their result.</p>
     </div>
 
     <!-- Settings Tab -->
@@ -274,6 +281,6 @@
   <p>&copy; <span id="footerYear"></span> Vilt Group. All rights reserved.</p>
 </footer>
 
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=8"></script>
 </body>
 </html>

@@ -246,7 +246,8 @@ function serverNow() {
     countdownTimer: null,
     unsubscribe: null,
     answered: false,
-    selectedMulti: []
+    selectedMulti: [],
+    resultsSaved: false
   };
   var pendingLiveCode = null;
 
@@ -270,6 +271,7 @@ function serverNow() {
     live.renderedStatus = null;
     live.answered = false;
     live.selectedMulti = [];
+    live.resultsSaved = false;
   }
 
   // ---------------------------------------------------------
@@ -540,11 +542,13 @@ function serverNow() {
 
   $('hostStartGameBtn').addEventListener('click', function () {
     if (!live.code) return;
-    update(ref(db, 'sessions/' + live.code), {
+    var updates = {
       status: 'active',
       currentIndex: 0,
       questionStartedAt: SERVER_TIMESTAMP()
-    });
+    };
+    updates['questionStartTimes/0'] = SERVER_TIMESTAMP();
+    update(ref(db, 'sessions/' + live.code), updates);
   });
 
   function updateHostAnswerCount(data, idx) {
@@ -713,18 +717,59 @@ function serverNow() {
     if (nextIndex >= data.questions.length) {
       update(ref(db, 'sessions/' + live.code), { status: 'finished', finishedAt: SERVER_TIMESTAMP() });
     } else {
-      update(ref(db, 'sessions/' + live.code), {
+      var updates = {
         status: 'active',
         currentIndex: nextIndex,
         questionStartedAt: SERVER_TIMESTAMP()
-      });
+      };
+      updates['questionStartTimes/' + nextIndex] = SERVER_TIMESTAMP();
+      update(ref(db, 'sessions/' + live.code), updates);
     }
   });
+
+  function saveLiveResultsLocally(data) {
+    if (!live.isHost || live.resultsSaved) return;
+    live.resultsSaved = true;
+
+    var players = data.players || {};
+    var answers = data.answers || {};
+    var startTimes = data.questionStartTimes || {};
+    var totalQuestions = data.questions.length;
+    var results = getResults();
+    var finishedAt = Date.now();
+
+    Object.keys(players).forEach(function (pid) {
+      var correctCount = 0;
+      var totalTime = 0;
+      for (var idx = 0; idx < totalQuestions; idx++) {
+        var a = answers[idx] && answers[idx][pid];
+        if (!a) continue;
+        if (a.points > 0) correctCount++;
+        var startedAt = startTimes[idx];
+        if (startedAt && typeof a.answeredAt === 'number') {
+          totalTime += Math.max(0, (a.answeredAt - startedAt) / 1000);
+        }
+      }
+      results.push({
+        name: players[pid].name,
+        score: players[pid].score || 0,
+        correctCount: correctCount,
+        totalQuestions: totalQuestions,
+        totalTime: totalTime,
+        date: finishedAt,
+        mode: 'live',
+        sessionCode: live.code
+      });
+    });
+
+    setResults(results);
+  }
 
   function renderLiveFinalResults(data) {
     clearInterval(live.countdownTimer);
     showView('result');
     hideFeedback();
+    saveLiveResultsLocally(data);
 
     var players = data.players || {};
     var list = Object.keys(players).map(function (id) {
@@ -948,15 +993,24 @@ function serverNow() {
   });
 
   // ---------------------------------------------------------
-  // ADMIN: results (solo mode only)
+  // ADMIN: results (solo-mode results saved on submit, plus
+  // live-mode results saved by the host when a live game finishes)
   // ---------------------------------------------------------
   function renderResults() {
     var results = getResults();
+    var soloResults = results.filter(function (r) { return r.mode !== 'live'; });
+    var liveResults = results.filter(function (r) { return r.mode === 'live'; });
+
+    renderSoloResultsTable(soloResults);
+    renderLiveGamesList(liveResults);
+  }
+
+  function renderSoloResultsTable(soloResults) {
     var tbody = $('resultsTableBody');
     tbody.innerHTML = '';
-    $('noResultsMsg').classList.toggle('hidden', results.length > 0);
+    $('noResultsMsg').classList.toggle('hidden', soloResults.length > 0);
 
-    results.slice().reverse().forEach(function (r) {
+    soloResults.slice().reverse().forEach(function (r) {
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + escapeHtml(r.name) + '</td>' +
@@ -965,6 +1019,57 @@ function serverNow() {
         '<td>' + r.totalTime.toFixed(1) + 's</td>' +
         '<td>' + new Date(r.date).toLocaleString() + '</td>';
       tbody.appendChild(tr);
+    });
+  }
+
+  function renderLiveGamesList(liveResults) {
+    var container = $('liveGamesList');
+    container.innerHTML = '';
+    $('noLiveGamesMsg').classList.toggle('hidden', liveResults.length > 0);
+
+    // Group players by the live session they played in.
+    var groups = {};
+    var order = [];
+    liveResults.forEach(function (r) {
+      var code = r.sessionCode || 'unknown-' + r.date;
+      if (!groups[code]) {
+        groups[code] = { code: r.sessionCode || null, date: r.date, players: [] };
+        order.push(code);
+      }
+      groups[code].players.push(r);
+      if (r.date > groups[code].date) groups[code].date = r.date;
+    });
+
+    // Most recently finished game first.
+    order.sort(function (a, b) { return groups[b].date - groups[a].date; });
+
+    order.forEach(function (code) {
+      var group = groups[code];
+      var players = group.players.slice().sort(function (a, b) { return b.score - a.score; });
+
+      var card = document.createElement('div');
+      card.className = 'live-game-card';
+
+      var header = document.createElement('div');
+      header.className = 'live-game-header';
+      header.innerHTML =
+        '<strong>' + (group.code ? 'Game ' + escapeHtml(group.code) : 'Game (code unavailable)') + '</strong>' +
+        '<span>' + players.length + (players.length === 1 ? ' player' : ' players') + ' &middot; ' + new Date(group.date).toLocaleString() + '</span>';
+      card.appendChild(header);
+
+      var list = document.createElement('ol');
+      list.className = 'live-game-players';
+      players.forEach(function (r, i) {
+        var li = document.createElement('li');
+        li.innerHTML =
+          '<span><span class="lg-rank">' + (i + 1) + '.</span>' + escapeHtml(r.name) + '</span>' +
+          '<span class="lg-meta">' + r.correctCount + '/' + r.totalQuestions + ' correct</span>' +
+          '<strong>' + r.score + ' pts</strong>';
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+
+      container.appendChild(card);
     });
   }
 
@@ -981,9 +1086,10 @@ function serverNow() {
       alert('No results to export.');
       return;
     }
-    var rows = [['Name', 'Score', 'Correct', 'Total questions', 'Total time (s)', 'Date']];
+    var rows = [['Name', 'Mode', 'Game code', 'Score', 'Correct', 'Total questions', 'Total time (s)', 'Date']];
     results.forEach(function (r) {
-      rows.push([r.name, r.score, r.correctCount, r.totalQuestions, r.totalTime.toFixed(1), new Date(r.date).toLocaleString()]);
+      var mode = r.mode === 'live' ? 'Live' : 'Solo';
+      rows.push([r.name, mode, r.sessionCode || '', r.score, r.correctCount, r.totalQuestions, r.totalTime.toFixed(1), new Date(r.date).toLocaleString()]);
     });
     var csv = rows.map(function (row) {
       return row.map(function (cell) {
@@ -1291,7 +1397,8 @@ function serverNow() {
       correctCount: correctCount,
       totalQuestions: session.questions.length,
       totalTime: totalTime,
-      date: Date.now()
+      date: Date.now(),
+      mode: 'solo'
     };
     var results = getResults();
     results.push(result);
