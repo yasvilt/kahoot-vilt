@@ -1,7 +1,39 @@
 /* ===========================================================
-   Vilt Group Quiz App — Logic (vanilla JS, no dependencies)
-   Persistence: localStorage. No backend.
+   Vilt Group Quiz App — Logic (vanilla JS module, no bundler)
+   Solo mode persistence: localStorage. No backend.
+   Live mode: Firebase Realtime Database (for synchronized play).
    =========================================================== */
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-app.js";
+import {
+  getDatabase, ref, set, get, update, push, onValue
+} from "https://www.gstatic.com/firebasejs/12.17.1/firebase-database.js";
+
+var firebaseConfig = {
+  apiKey: "AIzaSyDfMsmpdAYa8hHj6QaSGxZlzHvkcAHEHVA",
+  authDomain: "vilt-quiz-lamatinale.firebaseapp.com",
+  databaseURL: "https://vilt-quiz-lamatinale-default-rtdb.firebaseio.com",
+  projectId: "vilt-quiz-lamatinale",
+  storageBucket: "vilt-quiz-lamatinale.firebasestorage.app",
+  messagingSenderId: "838159536101",
+  appId: "1:838159536101:web:1cdf33fee486f1f43de90c"
+};
+
+var firebaseApp = initializeApp(firebaseConfig);
+var db = getDatabase(firebaseApp);
+
+// RTDB special value that gets resolved to the server's clock on write.
+function SERVER_TIMESTAMP() { return { '.sv': 'timestamp' }; }
+
+// Offset between this device's clock and the database server's clock,
+// so every client's countdown agrees on how much time is left.
+var serverTimeOffsetMs = 0;
+onValue(ref(db, '.info/serverTimeOffset'), function (snap) {
+  serverTimeOffsetMs = snap.val() || 0;
+});
+function serverNow() {
+  return Date.now() + serverTimeOffsetMs;
+}
 
 (function () {
   'use strict';
@@ -26,6 +58,11 @@
   };
   var TYPE_CODES = { classic4: 1, classic2: 2, truefalse: 3, multi: 4 };
   var TYPE_CODES_REVERSE = { 1: 'classic4', 2: 'classic2', 3: 'truefalse', 4: 'multi' };
+
+  // Live-game speed bonus: 1st correct answer +100, 2nd +50, 3rd +20,
+  // everyone else who answers correctly gets a flat +1.
+  var LIVE_RANK_POINTS = [100, 50, 20];
+  var LIVE_DEFAULT_POINTS = 1;
 
   // ---------------------------------------------------------
   // Preloaded sample data (only if nothing exists yet)
@@ -108,7 +145,7 @@
   }
 
   // ---------------------------------------------------------
-  // Compact question encoding (to shorten the link/code)
+  // Compact question encoding (to shorten the solo-play link/code)
   // ---------------------------------------------------------
   function toCompactQuestion(q) {
     var compact = { i: q.id, t: q.text, y: TYPE_CODES[q.type] || 1, c: q.correct, s: q.time };
@@ -128,7 +165,7 @@
   }
 
   // ---------------------------------------------------------
-  // Base64 helpers (UTF-8 safe) to encode the quiz into the URL
+  // Base64 helpers (UTF-8 safe) to encode the solo-play quiz into the URL
   // ---------------------------------------------------------
   function encodeQuizPayload(questions) {
     var json = JSON.stringify(questions.map(toCompactQuestion));
@@ -165,6 +202,7 @@
     home: $('view-home'),
     adminLogin: $('view-admin-login'),
     admin: $('view-admin'),
+    lobby: $('view-lobby'),
     join: $('view-join'),
     play: $('view-play'),
     result: $('view-result')
@@ -178,7 +216,7 @@
   }
 
   // ---------------------------------------------------------
-  // In-memory state for the player's game session
+  // In-memory state for the player's solo-mode game session
   // ---------------------------------------------------------
   var session = {
     questions: [],
@@ -193,6 +231,46 @@
     answered: false,
     selectedMulti: []
   };
+
+  // ---------------------------------------------------------
+  // In-memory state for the live (synchronized) game session
+  // ---------------------------------------------------------
+  var live = {
+    code: null,
+    isHost: false,
+    playerId: null,
+    playerName: '',
+    data: null,
+    renderedIndex: -1,
+    renderedStatus: null,
+    countdownTimer: null,
+    unsubscribe: null,
+    answered: false,
+    selectedMulti: []
+  };
+  var pendingLiveCode = null;
+
+  function detachLiveListener() {
+    if (live.unsubscribe) {
+      live.unsubscribe();
+      live.unsubscribe = null;
+    }
+    clearInterval(live.countdownTimer);
+    live.countdownTimer = null;
+  }
+
+  function resetLiveState() {
+    detachLiveListener();
+    live.code = null;
+    live.isHost = false;
+    live.playerId = null;
+    live.playerName = '';
+    live.data = null;
+    live.renderedIndex = -1;
+    live.renderedStatus = null;
+    live.answered = false;
+    live.selectedMulti = [];
+  }
 
   // ---------------------------------------------------------
   // Initialization / URL routing
@@ -243,16 +321,38 @@
       return;
     }
 
-    var map = loadJSON(LS_CODE_MAP, {});
     var code = raw.toUpperCase();
-    if (map[code]) {
-      var decoded = decodeQuizPayload(map[code]);
-      if (decoded && decoded.length) {
-        startClientFlow(normalizeQuestions(decoded));
+
+    // Try a live (synchronized) session first.
+    get(ref(db, 'sessions/' + code)).then(function (snap) {
+      if (snap.exists()) {
+        pendingLiveCode = code;
+        showView('join');
         return;
       }
-    }
-    alert('We could not find that code on this device. Ask the admin for the full link.');
+
+      // Fall back to a legacy solo-play code stored on this device.
+      var map = loadJSON(LS_CODE_MAP, {});
+      if (map[code]) {
+        var decoded = decodeQuizPayload(map[code]);
+        if (decoded && decoded.length) {
+          startClientFlow(normalizeQuestions(decoded));
+          return;
+        }
+      }
+      alert('We could not find that code. Ask the admin for a valid code or the full link.');
+    }).catch(function () {
+      // Live lookup failed (e.g. offline) — still try the legacy local code.
+      var map = loadJSON(LS_CODE_MAP, {});
+      if (map[code]) {
+        var decoded = decodeQuizPayload(map[code]);
+        if (decoded && decoded.length) {
+          startClientFlow(normalizeQuestions(decoded));
+          return;
+        }
+      }
+      alert('Could not reach the live game service. Check your connection and try again.');
+    });
   });
 
   $('goAdminLink').addEventListener('click', function () {
@@ -263,6 +363,8 @@
     if (isAdminLoggedIn()) renderAdmin();
   });
   $('navHomeBtn').addEventListener('click', function () {
+    resetLiveState();
+    pendingLiveCode = null;
     showView('home');
   });
 
@@ -307,7 +409,7 @@
   });
 
   // ---------------------------------------------------------
-  // ADMIN: generate shareable link
+  // ADMIN: generate solo-play shareable link
   // ---------------------------------------------------------
   $('shareLinkBtn').addEventListener('click', function () {
     var questions = getQuestions();
@@ -345,6 +447,307 @@
   $('copyShareLinkBtn').addEventListener('click', function () {
     copyInputValue('shareLinkOutput', this);
   });
+
+  // ---------------------------------------------------------
+  // ADMIN: live (synchronized) game
+  // ---------------------------------------------------------
+  function generateUniqueSessionCode() {
+    var code = generateShortCode();
+    return get(ref(db, 'sessions/' + code)).then(function (snap) {
+      if (snap.exists()) return generateUniqueSessionCode();
+      return code;
+    });
+  }
+
+  $('startLiveGameBtn').addEventListener('click', function () {
+    var questions = getQuestions();
+    if (!questions.length) {
+      alert('Add at least one question before starting a live game.');
+      return;
+    }
+    generateUniqueSessionCode().then(function (code) {
+      return set(ref(db, 'sessions/' + code), {
+        status: 'lobby',
+        createdAt: SERVER_TIMESTAMP(),
+        currentIndex: -1,
+        questions: questions,
+        players: {}
+      }).then(function () { return code; });
+    }).then(function (code) {
+      resetLiveState();
+      live.code = code;
+      live.isHost = true;
+      enterLiveFlow(code);
+    }).catch(function (err) {
+      alert('Could not start the live game: ' + err.message);
+    });
+  });
+
+  function joinLiveSessionAsPlayer(code, name) {
+    var newPlayerRef = push(ref(db, 'sessions/' + code + '/players'));
+    var playerId = newPlayerRef.key;
+    set(newPlayerRef, { name: name, score: 0, joinedAt: SERVER_TIMESTAMP() }).then(function () {
+      resetLiveState();
+      live.code = code;
+      live.isHost = false;
+      live.playerId = playerId;
+      live.playerName = name;
+      pendingLiveCode = null;
+      enterLiveFlow(code);
+    }).catch(function (err) {
+      alert('Could not join the game: ' + err.message);
+    });
+  }
+
+  function enterLiveFlow(code) {
+    if (live.unsubscribe) live.unsubscribe();
+    live.unsubscribe = onValue(ref(db, 'sessions/' + code), function (snap) {
+      var data = snap.val();
+      if (!data) return;
+      live.data = data;
+      renderLiveState(data);
+    });
+  }
+
+  function renderLiveState(data) {
+    if (data.status === 'lobby') {
+      renderLobbyView(data);
+    } else if (data.status === 'active') {
+      renderLiveQuestion(data);
+    } else if (data.status === 'reveal') {
+      renderLiveReveal(data);
+    } else if (data.status === 'finished') {
+      renderLiveFinalResults(data);
+    }
+  }
+
+  function renderLobbyView(data) {
+    showView('lobby');
+    var players = data.players || {};
+    var names = Object.keys(players).map(function (id) { return players[id].name; });
+    $('lobbyCodeLine').innerHTML = 'Code: <strong>' + escapeHtml(live.code) + '</strong>';
+    $('lobbyPlayerCountLabel').textContent = names.length + (names.length === 1 ? ' player joined' : ' players joined');
+    var list = $('lobbyPlayerList');
+    list.innerHTML = '';
+    names.forEach(function (n) {
+      var li = document.createElement('li');
+      li.textContent = n;
+      list.appendChild(li);
+    });
+    $('hostStartGameBtn').classList.toggle('hidden', !live.isHost);
+    $('waitingForHostMsg').classList.toggle('hidden', live.isHost);
+  }
+
+  $('hostStartGameBtn').addEventListener('click', function () {
+    if (!live.code) return;
+    update(ref(db, 'sessions/' + live.code), {
+      status: 'active',
+      currentIndex: 0,
+      questionStartedAt: SERVER_TIMESTAMP()
+    });
+  });
+
+  function updateHostAnswerCount(data, idx) {
+    if (!live.isHost) return;
+    var totalPlayers = Object.keys(data.players || {}).length;
+    var answeredCount = (data.answers && data.answers[idx]) ? Object.keys(data.answers[idx]).length : 0;
+    $('hostAnswerCountLabel').textContent = answeredCount + '/' + totalPlayers + ' answered';
+  }
+
+  function renderLiveQuestion(data) {
+    var idx = data.currentIndex;
+    var q = data.questions[idx];
+    var isNewQuestion = live.renderedIndex !== idx || live.renderedStatus !== 'active';
+    live.renderedStatus = 'active';
+
+    if (isNewQuestion) {
+      live.renderedIndex = idx;
+      live.answered = false;
+      live.selectedMulti = [];
+      showView('play');
+
+      $('progressLabel').textContent = 'Question ' + (idx + 1) + ' / ' + data.questions.length;
+      $('progressBarFill').style.width = (idx / data.questions.length * 100) + '%';
+      $('playQuestionText').textContent = q.text;
+
+      var buttons = document.querySelectorAll('#answerGrid .answer-btn');
+      buttons.forEach(function (btn, i) {
+        btn.disabled = live.isHost;
+        btn.classList.remove('correct-answer', 'wrong-answer', 'selected');
+        btn.classList.remove('opt-red', 'opt-blue', 'opt-yellow', 'opt-green', 'opt-truefalse-true', 'opt-truefalse-false');
+        if (i < q.options.length) {
+          btn.classList.remove('hidden');
+          $('playOption' + i).textContent = q.options[i];
+          if (q.type === 'truefalse') {
+            btn.classList.add(i === 0 ? 'opt-truefalse-true' : 'opt-truefalse-false');
+          } else {
+            btn.classList.add('opt-' + OPTION_COLORS[i]);
+          }
+        } else {
+          btn.classList.add('hidden');
+        }
+      });
+
+      var confirmBtn = $('confirmMultiBtn');
+      confirmBtn.classList.toggle('hidden', q.type !== 'multi');
+      confirmBtn.disabled = true;
+      $('waitingOthersMsg').classList.add('hidden');
+      $('feedbackOverlay').classList.add('hidden');
+
+      $('hostControlsBar').classList.toggle('hidden', !live.isHost);
+      $('hostRevealBtn').classList.remove('hidden');
+      $('hostNextBtn').classList.add('hidden');
+
+      startLiveCountdown(q.time, data.questionStartedAt);
+    }
+
+    updateHostAnswerCount(data, idx);
+  }
+
+  function startLiveCountdown(totalTime, questionStartedAt) {
+    clearInterval(live.countdownTimer);
+    var circle = $('timerCircle');
+    circle.classList.remove('warning', 'danger');
+    function tick() {
+      var elapsed = (serverNow() - questionStartedAt) / 1000;
+      var remaining = Math.max(0, Math.ceil(totalTime - elapsed));
+      $('timerValue').textContent = remaining;
+      circle.classList.toggle('warning', remaining <= 5 && remaining > 2);
+      circle.classList.toggle('danger', remaining <= 2);
+      if (remaining <= 0) {
+        clearInterval(live.countdownTimer);
+        onLiveTimeUp();
+      }
+    }
+    tick();
+    live.countdownTimer = setInterval(tick, 250);
+  }
+
+  function onLiveTimeUp() {
+    document.querySelectorAll('#answerGrid .answer-btn').forEach(function (btn) { btn.disabled = true; });
+    $('confirmMultiBtn').disabled = true;
+    if (live.isHost) finalizeQuestionScoring();
+  }
+
+  $('hostRevealBtn').addEventListener('click', function () {
+    clearInterval(live.countdownTimer);
+    finalizeQuestionScoring();
+  });
+
+  function finalizeQuestionScoring() {
+    var data = live.data;
+    if (!data || data.status !== 'active') return;
+    var idx = data.currentIndex;
+    var q = data.questions[idx];
+    var answers = (data.answers && data.answers[idx]) || {};
+    var players = data.players || {};
+
+    var correctEntries = [];
+    Object.keys(answers).forEach(function (pid) {
+      var a = answers[pid];
+      var chosen = a.chosen;
+      var isCorrect = q.type === 'multi'
+        ? arraysEqualAsSets(Array.isArray(chosen) ? chosen : [chosen], q.correct)
+        : chosen === q.correct;
+      if (isCorrect) correctEntries.push({ pid: pid, answeredAt: a.answeredAt });
+    });
+    correctEntries.sort(function (x, y) { return x.answeredAt - y.answeredAt; });
+
+    var updates = {};
+    correctEntries.forEach(function (entry, rank) {
+      var bonus = LIVE_RANK_POINTS[rank] !== undefined ? LIVE_RANK_POINTS[rank] : LIVE_DEFAULT_POINTS;
+      var current = (players[entry.pid] && players[entry.pid].score) || 0;
+      updates['players/' + entry.pid + '/score'] = current + bonus;
+      updates['answers/' + idx + '/' + entry.pid + '/points'] = bonus;
+    });
+    updates.status = 'reveal';
+    update(ref(db, 'sessions/' + live.code), updates);
+  }
+
+  function renderLiveReveal(data) {
+    var idx = data.currentIndex;
+    var q = data.questions[idx];
+    clearInterval(live.countdownTimer);
+    showView('play');
+
+    var myAnswer = (data.answers && data.answers[idx] && live.playerId) ? data.answers[idx][live.playerId] : null;
+    var buttons = document.querySelectorAll('#answerGrid .answer-btn');
+    buttons.forEach(function (btn, i) {
+      btn.disabled = true;
+      var isCorrectOpt = q.type === 'multi' ? q.correct.indexOf(i) !== -1 : i === q.correct;
+      var wasChosen = myAnswer
+        ? (Array.isArray(myAnswer.chosen) ? myAnswer.chosen.indexOf(i) !== -1 : myAnswer.chosen === i)
+        : false;
+      btn.classList.remove('selected');
+      if (isCorrectOpt) btn.classList.add('correct-answer');
+      else if (wasChosen) btn.classList.add('wrong-answer');
+    });
+    $('waitingOthersMsg').classList.add('hidden');
+
+    if (!live.isHost) {
+      var isCorrect = myAnswer
+        ? (q.type === 'multi'
+          ? arraysEqualAsSets(Array.isArray(myAnswer.chosen) ? myAnswer.chosen : [myAnswer.chosen], q.correct)
+          : myAnswer.chosen === q.correct)
+        : false;
+      var points = (myAnswer && myAnswer.points) || 0;
+      showFeedback(!myAnswer ? 'timeout' : (isCorrect ? 'correct' : 'wrong'), points);
+    } else {
+      hideFeedback();
+    }
+
+    if (live.isHost) {
+      $('hostControlsBar').classList.remove('hidden');
+      $('hostRevealBtn').classList.add('hidden');
+      var isLast = idx >= data.questions.length - 1;
+      $('hostNextBtn').textContent = isLast ? 'Finish game' : 'Next question';
+      $('hostNextBtn').classList.remove('hidden');
+    }
+    updateHostAnswerCount(data, idx);
+  }
+
+  $('hostNextBtn').addEventListener('click', function () {
+    var data = live.data;
+    if (!data) return;
+    var nextIndex = data.currentIndex + 1;
+    if (nextIndex >= data.questions.length) {
+      update(ref(db, 'sessions/' + live.code), { status: 'finished', finishedAt: SERVER_TIMESTAMP() });
+    } else {
+      update(ref(db, 'sessions/' + live.code), {
+        status: 'active',
+        currentIndex: nextIndex,
+        questionStartedAt: SERVER_TIMESTAMP()
+      });
+    }
+  });
+
+  function renderLiveFinalResults(data) {
+    clearInterval(live.countdownTimer);
+    showView('result');
+    hideFeedback();
+
+    var players = data.players || {};
+    var list = Object.keys(players).map(function (id) {
+      return { id: id, name: players[id].name, score: players[id].score || 0 };
+    });
+    list.sort(function (a, b) { return b.score - a.score; });
+
+    var myEntry = list.filter(function (p) { return p.id === live.playerId; })[0];
+    $('resultGreeting').textContent = live.isHost ? 'Game finished!' : ('Great job, ' + live.playerName + '.');
+    $('finalScore').textContent = myEntry ? myEntry.score : (list[0] ? list[0].score : 0);
+    $('resultSummaryLine').textContent = list.length + (list.length === 1 ? ' player played' : ' players played');
+
+    $('answerSummaryList').innerHTML = '';
+    $('liveLeaderboardBox').classList.remove('hidden');
+    var board = $('liveLeaderboardList');
+    board.innerHTML = '';
+    list.forEach(function (p, i) {
+      var li = document.createElement('li');
+      li.className = (p.id === live.playerId) ? 'is-me' : '';
+      li.innerHTML = '<span>' + (i + 1) + '. ' + escapeHtml(p.name) + '</span><strong>' + p.score + ' pts</strong>';
+      board.appendChild(li);
+    });
+  }
 
   // ---------------------------------------------------------
   // ADMIN: question management
@@ -545,7 +948,7 @@
   });
 
   // ---------------------------------------------------------
-  // ADMIN: results
+  // ADMIN: results (solo mode only)
   // ---------------------------------------------------------
   function renderResults() {
     var results = getResults();
@@ -614,12 +1017,18 @@
   });
 
   // ---------------------------------------------------------
-  // CLIENT: name entry
+  // CLIENT: name entry (solo mode or joining a live session)
   // ---------------------------------------------------------
   $('nameForm').addEventListener('submit', function (e) {
     e.preventDefault();
     var name = $('playerNameInput').value.trim();
     if (!name) return;
+
+    if (pendingLiveCode) {
+      joinLiveSessionAsPlayer(pendingLiveCode, name);
+      return;
+    }
+
     session.playerName = name;
     session.currentIndex = 0;
     session.score = 0;
@@ -629,7 +1038,7 @@
   });
 
   // ---------------------------------------------------------
-  // CLIENT: gameplay — render question and timer
+  // CLIENT: solo-mode gameplay — render question and timer
   // ---------------------------------------------------------
   function renderQuestion() {
     var q = session.questions[session.currentIndex];
@@ -646,6 +1055,8 @@
     $('progressLabel').textContent = 'Question ' + (session.currentIndex + 1) + ' / ' + session.questions.length;
     $('progressBarFill').style.width = ((session.currentIndex) / session.questions.length * 100) + '%';
     $('playQuestionText').textContent = q.text;
+
+    $('hostControlsBar').classList.add('hidden');
 
     var buttons = document.querySelectorAll('#answerGrid .answer-btn');
     buttons.forEach(function (btn, idx) {
@@ -668,6 +1079,7 @@
     var confirmBtn = $('confirmMultiBtn');
     confirmBtn.classList.toggle('hidden', q.type !== 'multi');
     confirmBtn.disabled = true;
+    $('waitingOthersMsg').classList.add('hidden');
 
     $('timerValue').textContent = session.timeLeft;
     var circle = $('timerCircle');
@@ -694,9 +1106,15 @@
 
   document.querySelectorAll('#answerGrid .answer-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
+      var idx = parseInt(btn.dataset.idx, 10);
+
+      if (live.code) {
+        handleLiveAnswerClick(idx, btn);
+        return;
+      }
+
       if (session.answered) return;
       var q = session.questions[session.currentIndex];
-      var idx = parseInt(btn.dataset.idx, 10);
       if (q.type === 'multi') {
         toggleMultiSelection(idx, btn);
       } else {
@@ -718,6 +1136,11 @@
   }
 
   $('confirmMultiBtn').addEventListener('click', function () {
+    if (live.code) {
+      if (live.isHost || live.answered) return;
+      submitLiveAnswer(live.selectedMulti.slice());
+      return;
+    }
     if (session.answered) return;
     handleAnswer(session.selectedMulti.slice(), false);
   });
@@ -787,6 +1210,46 @@
     }, 1600);
   }
 
+  // ---------------------------------------------------------
+  // CLIENT: live-mode answer submission
+  // ---------------------------------------------------------
+  function handleLiveAnswerClick(idx, btn) {
+    if (live.isHost || live.answered) return;
+    var data = live.data;
+    if (!data || data.status !== 'active') return;
+    var q = data.questions[data.currentIndex];
+    if (q.type === 'multi') {
+      toggleLiveMultiSelection(idx, btn);
+    } else {
+      submitLiveAnswer(idx);
+    }
+  }
+
+  function toggleLiveMultiSelection(idx, btn) {
+    var pos = live.selectedMulti.indexOf(idx);
+    if (pos === -1) {
+      live.selectedMulti.push(idx);
+      btn.classList.add('selected');
+    } else {
+      live.selectedMulti.splice(pos, 1);
+      btn.classList.remove('selected');
+    }
+    $('confirmMultiBtn').disabled = live.selectedMulti.length === 0;
+  }
+
+  function submitLiveAnswer(chosen) {
+    if (live.isHost || live.answered || !live.data) return;
+    live.answered = true;
+    var idx = live.data.currentIndex;
+    set(ref(db, 'sessions/' + live.code + '/answers/' + idx + '/' + live.playerId), {
+      chosen: chosen,
+      answeredAt: SERVER_TIMESTAMP()
+    });
+    document.querySelectorAll('#answerGrid .answer-btn').forEach(function (btn) { btn.disabled = true; });
+    $('confirmMultiBtn').disabled = true;
+    $('waitingOthersMsg').classList.remove('hidden');
+  }
+
   function showFeedback(type, points) {
     var overlay = $('feedbackOverlay');
     var box = $('feedbackBox');
@@ -815,7 +1278,7 @@
   }
 
   // ---------------------------------------------------------
-  // CLIENT: end of quiz — save and show result
+  // CLIENT: end of solo-mode quiz — save and show result
   // ---------------------------------------------------------
   function finishQuiz() {
     $('progressBarFill').style.width = '100%';
@@ -838,6 +1301,7 @@
     $('finalScore').textContent = session.score;
     $('resultSummaryLine').textContent = correctCount + ' of ' + session.questions.length + ' correct answers · ' + totalTime.toFixed(1) + 's total';
 
+    $('liveLeaderboardBox').classList.add('hidden');
     var list = $('answerSummaryList');
     list.innerHTML = '';
     session.answers.forEach(function (a, idx) {

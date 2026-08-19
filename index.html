@@ -58,7 +58,8 @@
     <div class="admin-header">
       <h2>Admin panel</h2>
       <div class="admin-header-actions">
-        <button id="shareLinkBtn" class="btn btn-outline">Generate link for players</button>
+        <button id="startLiveGameBtn" class="btn btn-primary">Start live game</button>
+        <button id="shareLinkBtn" class="btn btn-outline">Generate solo-play link</button>
         <button id="adminLogoutBtn" class="btn btn-ghost">Log out</button>
       </div>
     </div>
@@ -77,6 +78,7 @@
         <button id="copyShareLinkBtn" class="btn btn-outline">Copy link</button>
       </div>
       <p class="tiny-note">The link includes the current questions, so it works on any device without needing a server.</p>
+      <p class="tiny-note">Note: "Start live game" runs everyone through the quiz together in real time with ranked speed bonuses. "Generate solo-play link" is the older, everyone-plays-on-their-own-pace mode.</p>
     </div>
 
     <div class="tabs">
@@ -181,6 +183,18 @@
     </div>
   </div>
 
+  <!-- ============ LIVE GAME: LOBBY ============ -->
+  <section id="view-lobby" class="view">
+    <div class="card small-card">
+      <h2>Lobby</h2>
+      <p class="muted" id="lobbyCodeLine"></p>
+      <p class="tiny-note" id="lobbyPlayerCountLabel">0 players joined</p>
+      <ul id="lobbyPlayerList" class="lobby-player-list"></ul>
+      <button id="hostStartGameBtn" class="btn btn-primary full-width hidden">Start game</button>
+      <p class="muted hidden" id="waitingForHostMsg">Waiting for the host to start the game&hellip;</p>
+    </div>
+  </section>
+
   <!-- ============ CLIENT: NAME ENTRY ============ -->
   <section id="view-join" class="view">
     <div class="card small-card">
@@ -196,6 +210,12 @@
 
   <!-- ============ CLIENT: QUIZ PLAY ============ -->
   <section id="view-play" class="view">
+    <div id="hostControlsBar" class="host-controls hidden">
+      <span id="hostAnswerCountLabel">0/0 answered</span>
+      <button type="button" id="hostRevealBtn" class="btn btn-outline">Reveal answer</button>
+      <button type="button" id="hostNextBtn" class="btn btn-primary hidden">Next question</button>
+    </div>
+
     <div class="play-header">
       <div class="progress-info">
         <span id="progressLabel">Question 1 / 5</span>
@@ -219,6 +239,8 @@
 
     <button type="button" id="confirmMultiBtn" class="btn btn-primary full-width hidden" disabled>Confirm answer</button>
 
+    <p id="waitingOthersMsg" class="tiny-note hidden">Answer submitted &mdash; waiting for the round to end&hellip;</p>
+
     <div id="feedbackOverlay" class="feedback-overlay hidden">
       <div id="feedbackBox" class="feedback-box">
         <div id="feedbackIcon" class="feedback-icon"></div>
@@ -238,6 +260,10 @@
       </div>
       <p id="resultSummaryLine" class="muted"></p>
       <ul id="answerSummaryList" class="answer-summary-list"></ul>
+      <div id="liveLeaderboardBox" class="hidden">
+        <h3>Final leaderboard</h3>
+        <ol id="liveLeaderboardList" class="leaderboard-list"></ol>
+      </div>
       <button id="backHomeBtn" class="btn btn-primary full-width">Back to home</button>
     </div>
   </section>
@@ -248,6 +274,6 @@
   <p>&copy; <span id="footerYear"></span> Vilt Group. All rights reserved.</p>
 </footer>
 
-<script src="app.js?v=5"></script>
+<script type="module" src="app.js?v=6"></script>
 </body>
 </html>
