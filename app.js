@@ -736,6 +736,7 @@ function serverNow() {
     var startTimes = data.questionStartTimes || {};
     var totalQuestions = data.questions.length;
     var results = getResults();
+    var finishedAt = Date.now();
 
     Object.keys(players).forEach(function (pid) {
       var correctCount = 0;
@@ -755,8 +756,9 @@ function serverNow() {
         correctCount: correctCount,
         totalQuestions: totalQuestions,
         totalTime: totalTime,
-        date: Date.now(),
-        mode: 'live'
+        date: finishedAt,
+        mode: 'live',
+        sessionCode: live.code
       });
     });
 
@@ -996,21 +998,78 @@ function serverNow() {
   // ---------------------------------------------------------
   function renderResults() {
     var results = getResults();
+    var soloResults = results.filter(function (r) { return r.mode !== 'live'; });
+    var liveResults = results.filter(function (r) { return r.mode === 'live'; });
+
+    renderSoloResultsTable(soloResults);
+    renderLiveGamesList(liveResults);
+  }
+
+  function renderSoloResultsTable(soloResults) {
     var tbody = $('resultsTableBody');
     tbody.innerHTML = '';
-    $('noResultsMsg').classList.toggle('hidden', results.length > 0);
+    $('noResultsMsg').classList.toggle('hidden', soloResults.length > 0);
 
-    results.slice().reverse().forEach(function (r) {
-      var mode = r.mode === 'live' ? 'Live' : 'Solo';
+    soloResults.slice().reverse().forEach(function (r) {
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + escapeHtml(r.name) + '</td>' +
-        '<td>' + mode + '</td>' +
         '<td>' + r.score + '</td>' +
         '<td>' + r.correctCount + '/' + r.totalQuestions + '</td>' +
         '<td>' + r.totalTime.toFixed(1) + 's</td>' +
         '<td>' + new Date(r.date).toLocaleString() + '</td>';
       tbody.appendChild(tr);
+    });
+  }
+
+  function renderLiveGamesList(liveResults) {
+    var container = $('liveGamesList');
+    container.innerHTML = '';
+    $('noLiveGamesMsg').classList.toggle('hidden', liveResults.length > 0);
+
+    // Group players by the live session they played in.
+    var groups = {};
+    var order = [];
+    liveResults.forEach(function (r) {
+      var code = r.sessionCode || 'unknown-' + r.date;
+      if (!groups[code]) {
+        groups[code] = { code: r.sessionCode || null, date: r.date, players: [] };
+        order.push(code);
+      }
+      groups[code].players.push(r);
+      if (r.date > groups[code].date) groups[code].date = r.date;
+    });
+
+    // Most recently finished game first.
+    order.sort(function (a, b) { return groups[b].date - groups[a].date; });
+
+    order.forEach(function (code) {
+      var group = groups[code];
+      var players = group.players.slice().sort(function (a, b) { return b.score - a.score; });
+
+      var card = document.createElement('div');
+      card.className = 'live-game-card';
+
+      var header = document.createElement('div');
+      header.className = 'live-game-header';
+      header.innerHTML =
+        '<strong>' + (group.code ? 'Game ' + escapeHtml(group.code) : 'Game (code unavailable)') + '</strong>' +
+        '<span>' + players.length + (players.length === 1 ? ' player' : ' players') + ' &middot; ' + new Date(group.date).toLocaleString() + '</span>';
+      card.appendChild(header);
+
+      var list = document.createElement('ol');
+      list.className = 'live-game-players';
+      players.forEach(function (r, i) {
+        var li = document.createElement('li');
+        li.innerHTML =
+          '<span><span class="lg-rank">' + (i + 1) + '.</span>' + escapeHtml(r.name) + '</span>' +
+          '<span class="lg-meta">' + r.correctCount + '/' + r.totalQuestions + ' correct</span>' +
+          '<strong>' + r.score + ' pts</strong>';
+        list.appendChild(li);
+      });
+      card.appendChild(list);
+
+      container.appendChild(card);
     });
   }
 
@@ -1027,10 +1086,10 @@ function serverNow() {
       alert('No results to export.');
       return;
     }
-    var rows = [['Name', 'Mode', 'Score', 'Correct', 'Total questions', 'Total time (s)', 'Date']];
+    var rows = [['Name', 'Mode', 'Game code', 'Score', 'Correct', 'Total questions', 'Total time (s)', 'Date']];
     results.forEach(function (r) {
       var mode = r.mode === 'live' ? 'Live' : 'Solo';
-      rows.push([r.name, mode, r.score, r.correctCount, r.totalQuestions, r.totalTime.toFixed(1), new Date(r.date).toLocaleString()]);
+      rows.push([r.name, mode, r.sessionCode || '', r.score, r.correctCount, r.totalQuestions, r.totalTime.toFixed(1), new Date(r.date).toLocaleString()]);
     });
     var csv = rows.map(function (row) {
       return row.map(function (cell) {
