@@ -246,7 +246,8 @@ function serverNow() {
     countdownTimer: null,
     unsubscribe: null,
     answered: false,
-    selectedMulti: []
+    selectedMulti: [],
+    resultsSaved: false
   };
   var pendingLiveCode = null;
 
@@ -270,6 +271,7 @@ function serverNow() {
     live.renderedStatus = null;
     live.answered = false;
     live.selectedMulti = [];
+    live.resultsSaved = false;
   }
 
   // ---------------------------------------------------------
@@ -540,11 +542,13 @@ function serverNow() {
 
   $('hostStartGameBtn').addEventListener('click', function () {
     if (!live.code) return;
-    update(ref(db, 'sessions/' + live.code), {
+    var updates = {
       status: 'active',
       currentIndex: 0,
       questionStartedAt: SERVER_TIMESTAMP()
-    });
+    };
+    updates['questionStartTimes/0'] = SERVER_TIMESTAMP();
+    update(ref(db, 'sessions/' + live.code), updates);
   });
 
   function updateHostAnswerCount(data, idx) {
@@ -713,18 +717,57 @@ function serverNow() {
     if (nextIndex >= data.questions.length) {
       update(ref(db, 'sessions/' + live.code), { status: 'finished', finishedAt: SERVER_TIMESTAMP() });
     } else {
-      update(ref(db, 'sessions/' + live.code), {
+      var updates = {
         status: 'active',
         currentIndex: nextIndex,
         questionStartedAt: SERVER_TIMESTAMP()
-      });
+      };
+      updates['questionStartTimes/' + nextIndex] = SERVER_TIMESTAMP();
+      update(ref(db, 'sessions/' + live.code), updates);
     }
   });
+
+  function saveLiveResultsLocally(data) {
+    if (!live.isHost || live.resultsSaved) return;
+    live.resultsSaved = true;
+
+    var players = data.players || {};
+    var answers = data.answers || {};
+    var startTimes = data.questionStartTimes || {};
+    var totalQuestions = data.questions.length;
+    var results = getResults();
+
+    Object.keys(players).forEach(function (pid) {
+      var correctCount = 0;
+      var totalTime = 0;
+      for (var idx = 0; idx < totalQuestions; idx++) {
+        var a = answers[idx] && answers[idx][pid];
+        if (!a) continue;
+        if (a.points > 0) correctCount++;
+        var startedAt = startTimes[idx];
+        if (startedAt && typeof a.answeredAt === 'number') {
+          totalTime += Math.max(0, (a.answeredAt - startedAt) / 1000);
+        }
+      }
+      results.push({
+        name: players[pid].name,
+        score: players[pid].score || 0,
+        correctCount: correctCount,
+        totalQuestions: totalQuestions,
+        totalTime: totalTime,
+        date: Date.now(),
+        mode: 'live'
+      });
+    });
+
+    setResults(results);
+  }
 
   function renderLiveFinalResults(data) {
     clearInterval(live.countdownTimer);
     showView('result');
     hideFeedback();
+    saveLiveResultsLocally(data);
 
     var players = data.players || {};
     var list = Object.keys(players).map(function (id) {
@@ -948,7 +991,8 @@ function serverNow() {
   });
 
   // ---------------------------------------------------------
-  // ADMIN: results (solo mode only)
+  // ADMIN: results (solo-mode results saved on submit, plus
+  // live-mode results saved by the host when a live game finishes)
   // ---------------------------------------------------------
   function renderResults() {
     var results = getResults();
@@ -957,9 +1001,11 @@ function serverNow() {
     $('noResultsMsg').classList.toggle('hidden', results.length > 0);
 
     results.slice().reverse().forEach(function (r) {
+      var mode = r.mode === 'live' ? 'Live' : 'Solo';
       var tr = document.createElement('tr');
       tr.innerHTML =
         '<td>' + escapeHtml(r.name) + '</td>' +
+        '<td>' + mode + '</td>' +
         '<td>' + r.score + '</td>' +
         '<td>' + r.correctCount + '/' + r.totalQuestions + '</td>' +
         '<td>' + r.totalTime.toFixed(1) + 's</td>' +
@@ -981,9 +1027,10 @@ function serverNow() {
       alert('No results to export.');
       return;
     }
-    var rows = [['Name', 'Score', 'Correct', 'Total questions', 'Total time (s)', 'Date']];
+    var rows = [['Name', 'Mode', 'Score', 'Correct', 'Total questions', 'Total time (s)', 'Date']];
     results.forEach(function (r) {
-      rows.push([r.name, r.score, r.correctCount, r.totalQuestions, r.totalTime.toFixed(1), new Date(r.date).toLocaleString()]);
+      var mode = r.mode === 'live' ? 'Live' : 'Solo';
+      rows.push([r.name, mode, r.score, r.correctCount, r.totalQuestions, r.totalTime.toFixed(1), new Date(r.date).toLocaleString()]);
     });
     var csv = rows.map(function (row) {
       return row.map(function (cell) {
@@ -1291,7 +1338,8 @@ function serverNow() {
       correctCount: correctCount,
       totalQuestions: session.questions.length,
       totalTime: totalTime,
-      date: Date.now()
+      date: Date.now(),
+      mode: 'solo'
     };
     var results = getResults();
     results.push(result);
