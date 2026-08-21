@@ -212,6 +212,7 @@ function serverNow() {
     Object.keys(views).forEach(function (key) {
       views[key].classList.toggle('active-view', key === name);
     });
+    $('adminLogoutBtn').classList.toggle('hidden', !isAdminLoggedIn());
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -428,7 +429,7 @@ function serverNow() {
     var url = window.location.origin + window.location.pathname + '?q=' + payload;
     $('shareCodeOutput').value = code;
     $('shareLinkOutput').value = url;
-    $('shareLinkBox').classList.remove('hidden');
+    $('shareCodeModal').classList.remove('hidden');
   });
 
   function copyInputValue(inputId, btn) {
@@ -448,6 +449,17 @@ function serverNow() {
 
   $('copyShareLinkBtn').addEventListener('click', function () {
     copyInputValue('shareLinkOutput', this);
+  });
+
+  $('viewShareLinkBtn').addEventListener('click', function () {
+    $('shareCodeModal').classList.add('hidden');
+    $('shareLinkModal').classList.remove('hidden');
+  });
+  $('closeShareCodeModalBtn').addEventListener('click', function () {
+    $('shareCodeModal').classList.add('hidden');
+  });
+  $('closeShareLinkModalBtn').addEventListener('click', function () {
+    $('shareLinkModal').classList.add('hidden');
   });
 
   // ---------------------------------------------------------
