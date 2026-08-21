@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 
@@ -22,6 +22,7 @@
       <button id="navHomeBtn" class="link-btn">Home</button>
       <button id="navAdminBtn" class="link-btn">Admin</button>
     </nav>
+    <button id="adminLogoutBtn" class="btn btn-ghost hidden">Log out</button>
   </div>
 </header>
 
@@ -36,8 +37,8 @@
         <input id="joinCodeInput" type="text" placeholder="Quiz code (e.g. A1B2C3)" maxlength="12" autocomplete="off">
         <button type="submit" class="btn btn-primary">Join</button>
       </form>
-      <p class="tiny-note">Are you an admin? <button id="goAdminLink" class="link-inline">Go to the admin panel</button></p>
     </div>
+    <p class="tiny-note home-admin-note">Are you an admin? <button id="goAdminLink" class="link-inline">Go to the admin panel</button></p>
   </section>
 
   <!-- ============ ADMIN LOGIN ============ -->
@@ -58,27 +59,9 @@
     <div class="admin-header">
       <h2>Admin panel</h2>
       <div class="admin-header-actions">
-        <button id="startLiveGameBtn" class="btn btn-primary">Start live game</button>
+        <button id="startLiveGameBtn" class="btn btn-outline accent">Start live game</button>
         <button id="shareLinkBtn" class="btn btn-outline">Generate solo-play link</button>
-        <button id="adminLogoutBtn" class="btn btn-ghost">Log out</button>
       </div>
-    </div>
-
-    <div id="shareLinkBox" class="share-box hidden">
-      <p><strong>Code to join from the home page:</strong></p>
-      <div class="share-row">
-        <input id="shareCodeOutput" type="text" readonly>
-        <button id="copyShareCodeBtn" class="btn btn-primary">Copy code</button>
-      </div>
-      <p class="tiny-note">This code only works on this same device/browser. Enter it in "Quiz code" on the home page.</p>
-
-      <p style="margin-top:16px;"><strong>Full link (works on any device):</strong></p>
-      <div class="share-row">
-        <input id="shareLinkOutput" type="text" readonly>
-        <button id="copyShareLinkBtn" class="btn btn-outline">Copy link</button>
-      </div>
-      <p class="tiny-note">The link includes the current questions, so it works on any device without needing a server.</p>
-      <p class="tiny-note">Note: "Start live game" runs everyone through the quiz together in real time with ranked speed bonuses. "Generate solo-play link" is the older, everyone-plays-on-their-own-pace mode.</p>
     </div>
 
     <div class="tabs">
@@ -90,7 +73,7 @@
     <!-- Questions Tab -->
     <div id="tab-questions" class="tab-panel active">
       <div class="panel-actions">
-        <button id="addQuestionBtn" class="btn btn-primary">+ New question</button>
+        <button id="addQuestionBtn" class="btn-text">+ New question</button>
       </div>
       <ul id="questionList" class="question-list"></ul>
       <p id="noQuestionsMsg" class="muted hidden">No questions added yet.</p>
@@ -98,17 +81,13 @@
 
     <!-- Results Tab -->
     <div id="tab-results" class="tab-panel">
-      <div class="panel-actions">
-        <button id="exportCsvBtn" class="btn btn-outline">Export CSV</button>
-        <button id="clearResultsBtn" class="btn btn-ghost">Clear results</button>
-      </div>
-
       <h3>Live games</h3>
       <p class="tiny-note">Each live game you hosted, with its final leaderboard, saved automatically on this device when the game finished.</p>
       <div id="liveGamesList" class="live-games-list"></div>
       <p id="noLiveGamesMsg" class="muted hidden">No live games hosted on this device yet.</p>
 
       <h3 style="margin-top:28px;">Solo play results</h3>
+      <p class="tiny-note">Solo-play results only save on the player's own device — to consolidate those, ask each participant to send you a screenshot of their result.</p>
       <div class="table-wrap">
         <table id="resultsTable" class="results-table">
           <thead>
@@ -124,7 +103,11 @@
         </table>
       </div>
       <p id="noResultsMsg" class="muted hidden">No solo-play results recorded on this device yet.</p>
-      <p class="tiny-note">Solo-play results only save on the player's own device — to consolidate those, ask each participant to send you a screenshot of their result.</p>
+
+      <div class="panel-actions">
+        <button id="exportCsvBtn" class="btn btn-outline">Export CSV</button>
+        <button id="clearResultsBtn" class="btn btn-ghost">Clear results</button>
+      </div>
     </div>
 
     <!-- Settings Tab -->
@@ -190,6 +173,38 @@
     </div>
   </div>
 
+  <!-- ============ SOLO-PLAY: CODE MODAL ============ -->
+  <div id="shareCodeModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3>Code to join from the home page</h3>
+      <div class="share-combo">
+        <input id="shareCodeOutput" type="text" readonly>
+        <button id="copyShareCodeBtn" class="btn btn-primary">Copy code</button>
+      </div>
+      <p class="tiny-note">This code only works on this same device/browser. Enter it in "Quiz code" on the home page.</p>
+      <div class="modal-actions">
+        <button type="button" id="viewShareLinkBtn" class="btn btn-outline">View full link instead</button>
+        <button type="button" id="closeShareCodeModalBtn" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ SOLO-PLAY: LINK MODAL ============ -->
+  <div id="shareLinkModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <h3>Full link (works on any device)</h3>
+      <div class="share-row">
+        <input id="shareLinkOutput" type="text" readonly>
+        <button id="copyShareLinkBtn" class="btn btn-primary">Copy link</button>
+      </div>
+      <p class="tiny-note">The link includes the current questions, so it works on any device without needing a server.</p>
+      <p class="tiny-note">Note: "Start live game" runs everyone through the quiz together in real time with ranked speed bonuses. "Generate solo-play link" is the older, everyone-plays-on-their-own-pace mode.</p>
+      <div class="modal-actions">
+        <button type="button" id="closeShareLinkModalBtn" class="btn btn-ghost">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ LIVE GAME: LOBBY ============ -->
   <section id="view-lobby" class="view">
     <div class="card small-card">
@@ -219,7 +234,7 @@
   <section id="view-play" class="view">
     <div id="hostControlsBar" class="host-controls hidden">
       <span id="hostAnswerCountLabel">0/0 answered</span>
-      <button type="button" id="hostRevealBtn" class="btn btn-outline">Reveal answer</button>
+      <button type="button" id="hostRevealBtn" class="btn btn-outline accent">Reveal answer</button>
       <button type="button" id="hostNextBtn" class="btn btn-primary hidden">Next question</button>
     </div>
 
@@ -281,6 +296,6 @@
   <p>&copy; <span id="footerYear"></span> Vilt Group. All rights reserved.</p>
 </footer>
 
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=10"></script>
 </body>
 </html>
