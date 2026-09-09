@@ -1324,12 +1324,7 @@ function serverNow() {
     });
     $('confirmMultiBtn').disabled = true;
 
-    var points = 0;
-    if (isCorrect) {
-      // Base score + speed bonus
-      var speedBonus = Math.max(0, q.time - timeTaken) / q.time;
-      points = Math.round(500 + speedBonus * 500);
-    }
+    var points = isCorrect ? 50 : 0;
     session.score += points;
 
     var chosenText = isTimeout || !chosenList.length
