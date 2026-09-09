@@ -44,7 +44,7 @@ function serverNow() {
   var LS_QUESTIONS = 'vg_quiz_questions';
   var LS_RESULTS = 'vg_quiz_results';
   var LS_ADMIN_PASS = 'vg_quiz_admin_pass';
-  var LS_CODE_MAP = 'vg_quiz_code_map'; // code -> base64 payload (same device only)
+  var LS_CODE_MAP = 'vg_quiz_code_map'; // code -> base64 payload (local cache; also synced to Firebase soloCodes/)
   var DEFAULT_ADMIN_PASS = 'vilt2024';
 
   var OPTION_COLORS = ['red', 'blue', 'yellow', 'green'];
@@ -301,6 +301,16 @@ function serverNow() {
           return;
         }
       }
+      get(ref(db, 'soloCodes/' + code)).then(function (snap) {
+        var data = snap.val();
+        var decodedFromCode = data && data.payload ? decodeQuizPayload(data.payload) : null;
+        if (decodedFromCode && decodedFromCode.length) {
+          startClientFlow(normalizeQuestions(decodedFromCode));
+        } else {
+          showView('home');
+        }
+      }).catch(function () { showView('home'); });
+      return;
     }
     showView('home');
   }
@@ -326,6 +336,32 @@ function serverNow() {
 
     var code = raw.toUpperCase();
 
+    function tryLocalSoloCode() {
+      var map = loadJSON(LS_CODE_MAP, {});
+      if (map[code]) {
+        var decoded = decodeQuizPayload(map[code]);
+        if (decoded && decoded.length) {
+          startClientFlow(normalizeQuestions(decoded));
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function tryRemoteSoloCode() {
+      return get(ref(db, 'soloCodes/' + code)).then(function (snap) {
+        var data = snap.val();
+        if (data && data.payload) {
+          var decoded = decodeQuizPayload(data.payload);
+          if (decoded && decoded.length) {
+            startClientFlow(normalizeQuestions(decoded));
+            return true;
+          }
+        }
+        return false;
+      }).catch(function () { return false; });
+    }
+
     // Try a live (synchronized) session first.
     get(ref(db, 'sessions/' + code)).then(function (snap) {
       if (snap.exists()) {
@@ -334,27 +370,18 @@ function serverNow() {
         return;
       }
 
-      // Fall back to a legacy solo-play code stored on this device.
-      var map = loadJSON(LS_CODE_MAP, {});
-      if (map[code]) {
-        var decoded = decodeQuizPayload(map[code]);
-        if (decoded && decoded.length) {
-          startClientFlow(normalizeQuestions(decoded));
-          return;
-        }
-      }
-      alert('We could not find that code. Ask the admin for a valid code or the full link.');
+      // Fall back to a solo-play code: check this device first, then Firebase
+      // so the same code also works for anyone else who was given it.
+      if (tryLocalSoloCode()) return;
+      tryRemoteSoloCode().then(function (found) {
+        if (!found) alert('We could not find that code. Ask the admin for a valid code or the full link.');
+      });
     }).catch(function () {
-      // Live lookup failed (e.g. offline) — still try the legacy local code.
-      var map = loadJSON(LS_CODE_MAP, {});
-      if (map[code]) {
-        var decoded = decodeQuizPayload(map[code]);
-        if (decoded && decoded.length) {
-          startClientFlow(normalizeQuestions(decoded));
-          return;
-        }
-      }
-      alert('Could not reach the live game service. Check your connection and try again.');
+      // Live lookup failed (e.g. offline) — still try the local and remote solo codes.
+      if (tryLocalSoloCode()) return;
+      tryRemoteSoloCode().then(function (found) {
+        if (!found) alert('Could not reach the quiz service. Check your connection and try again.');
+      });
     });
   });
 
@@ -425,6 +452,7 @@ function serverNow() {
     var map = loadJSON(LS_CODE_MAP, {});
     map[code] = payload;
     saveJSON(LS_CODE_MAP, map);
+    set(ref(db, 'soloCodes/' + code), { payload: payload, createdAt: SERVER_TIMESTAMP() }).catch(function () {});
 
     var url = window.location.origin + window.location.pathname + '?q=' + payload;
     $('shareCodeOutput').value = code;
