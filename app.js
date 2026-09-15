@@ -41,7 +41,7 @@ function serverNow() {
   // ---------------------------------------------------------
   // Constants / storage keys
   // ---------------------------------------------------------
-  var LS_QUESTIONS = 'vg_quiz_questions';
+  var LS_QUESTIONS = 'vg_quiz_questions'; // local cache; source of truth is Firebase questions/
   var LS_RESULTS = 'vg_quiz_results';
   var LS_ADMIN_PASS = 'vg_quiz_admin_pass';
   var LS_CODE_MAP = 'vg_quiz_code_map'; // code -> base64 payload (local cache; also synced to Firebase soloCodes/)
@@ -120,11 +120,37 @@ function serverNow() {
   function saveJSON(key, value) {
     localStorage.setItem(key, JSON.stringify(value));
   }
+  // Questions are shared across every admin via Firebase (questions/), with a
+  // localStorage copy kept only as an instant/offline fallback until the
+  // remote list has loaded for the first time.
+  var cachedQuestions = null;
+  var questionsSeeded = false;
+
+  onValue(ref(db, 'questions'), function (snap) {
+    var val = snap.val();
+    if (val === null && !questionsSeeded) {
+      // Nothing in the database yet: seed it once with the sample questions.
+      questionsSeeded = true;
+      cachedQuestions = normalizeQuestions(SAMPLE_QUESTIONS.slice());
+      set(ref(db, 'questions'), SAMPLE_QUESTIONS).catch(function () {});
+    } else {
+      questionsSeeded = true;
+      cachedQuestions = normalizeQuestions(val || []);
+    }
+    saveJSON(LS_QUESTIONS, cachedQuestions);
+    if (views.admin.classList.contains('active-view')) {
+      renderQuestionList();
+    }
+  });
+
   function getQuestions() {
+    if (cachedQuestions !== null) return cachedQuestions;
     return normalizeQuestions(loadJSON(LS_QUESTIONS, null) || SAMPLE_QUESTIONS.slice());
   }
   function setQuestions(list) {
-    saveJSON(LS_QUESTIONS, list);
+    cachedQuestions = normalizeQuestions(list);
+    saveJSON(LS_QUESTIONS, cachedQuestions);
+    set(ref(db, 'questions'), list).catch(function () {});
   }
   function getResults() {
     return loadJSON(LS_RESULTS, []);
@@ -137,11 +163,6 @@ function serverNow() {
   }
   function setAdminPass(pass) {
     localStorage.setItem(LS_ADMIN_PASS, pass);
-  }
-
-  // Ensure sample data exists on first run
-  if (!localStorage.getItem(LS_QUESTIONS)) {
-    setQuestions(SAMPLE_QUESTIONS);
   }
 
   // ---------------------------------------------------------
